@@ -1,0 +1,170 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Sky from '../../components/Sky.astro';
+import Card from '../../components/Card.astro';
+import { THEMES, NOTE, svg } from '../../lib/themes';
+
+export async function getStaticPaths() {
+  const all = await getCollection('feelings');
+  return all.map((entry) => ({ params: { id: entry.id }, props: { entry, all } }));
+}
+const { entry, all } = Astro.props;
+const d = entry.data;
+const th = THEMES[d.theme];
+const { Content } = await render(entry);
+const related = d.related.map((id) => all.find((x) => x.id === id)!).filter(Boolean);
+const ids = all.map((x) => x.id);
+const ld = {
+  '@context': 'https://schema.org', '@type': 'Article', headline: d.title, description: d.short,
+  url: new URL(`/e/${entry.id}/`, Astro.site).href,
+  image: new URL(`/og/${entry.id}.png`, Astro.site).href,
+  isPartOf: { '@type': 'WebSite', name: 'Why Do I Feel This', url: Astro.site!.href },
+};
+---
+<Base title={d.title} description={d.short} og={entry.id} type="article" bodyClass={`t${d.theme}`}>
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(ld)} />
+  <Sky theme={d.theme} />
+  <div class="wrap narrow">
+    <article class="entry" data-id={entry.id} data-ids={ids.join(',')}>
+      <div class="crumbs">
+        <a class="back" href="/"><Fragment set:html={svg('back')} />All feelings</a>
+        <span class="eyebrow"><Fragment set:html={svg(th.icon)} />{th.name}</span>
+      </div>
+
+      <h1 class="entry-title" style={`view-transition-name:t-${entry.id}`}>{d.title}</h1>
+
+      <div class="answer rise" style="--i:1">
+        <span class="eyebrow label">The short answer</span>
+        <p>{d.short}</p>
+      </div>
+
+      <div class="actions rise" style="--i:2">
+        <button class="btn" type="button" id="save" aria-pressed="false">
+          <Fragment set:html={svg('bookmark', 'ic bm')} /><span>Save</span>
+        </button>
+        <button class="btn quiet" type="button" id="share"><Fragment set:html={svg('share')} />Share</button>
+        <a class="btn quiet" href={`/og/${entry.id}.png`} download={`${entry.id}.png`}><Fragment set:html={svg('image')} />Share image</a>
+      </div>
+
+      <section class="section reveal">
+        <h2 class="eyebrow">What’s going on</h2>
+        <div class="prose"><Content /></div>
+      </section>
+
+      <section class="section reveal">
+        <h2 class="eyebrow">A small reframe</h2>
+        <blockquote class="reframe" style="margin:0"><p>{d.reframe}</p></blockquote>
+      </section>
+
+      <section class="section reveal">
+        <h2 class="eyebrow">Tiny things that might help</h2>
+        <ol class="helps">{d.helps.map((h) => <li>{h}</li>)}</ol>
+      </section>
+
+      <section class="section reveal">
+        <div class="breathe" id="breathe">
+          <div class="ring"><div class="core"></div></div>
+          <div>
+            <h3>Take one slow minute</h3>
+            <p class="phase" id="phase" aria-live="polite">Breathe in for 4, out for 6. Six rounds.</p>
+            <button class="btn" type="button" id="breatheBtn"><Fragment set:html={svg('breath')} />Start</button>
+          </div>
+        </div>
+      </section>
+
+      {related.length > 0 && (
+        <section class="section reveal">
+          <h2 class="eyebrow">Related feelings</h2>
+          <div class="related">
+            {related.map((r) => <Card id={r.id} title={r.data.title} short={r.data.short} theme={r.data.theme} reveal={false} />)}
+          </div>
+        </section>
+      )}
+
+      <section class="section reveal">
+        <div class="note">
+          <div>
+            <p>{NOTE}</p>
+            <p id="help">Free, confidential helplines in your country: <a href="https://findahelpline.com" rel="noopener" target="_blank">findahelpline.com</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <div class="next">
+        <a class="btn quiet" href="/"><Fragment set:html={svg('back')} />All feelings</a>
+        <a class="btn" id="another" href="/"><Fragment set:html={svg('shuffle')} />Another feeling</a>
+      </div>
+    </article>
+  </div>
+</Base>
+
+<script>
+  import { getSaved, toggleSaved, toast, reducedMotion } from '../../lib/client';
+
+  const art = document.querySelector<HTMLElement>('.entry')!;
+  const id = art.dataset.id!;
+
+  // Save
+  const save = document.getElementById('save')!;
+  const label = save.querySelector('span')!;
+  const paint = () => {
+    const on = getSaved().includes(id);
+    save.setAttribute('aria-pressed', String(on));
+    label.textContent = on ? 'Saved' : 'Save';
+  };
+  paint();
+  addEventListener('pageshow', paint);
+  save.addEventListener('click', () => {
+    const on = toggleSaved(id);
+    paint();
+    save.classList.remove('pop'); void save.offsetWidth; save.classList.add('pop');
+    toast(on ? 'Saved on this device' : 'Removed from saved');
+  });
+
+  // Share
+  document.getElementById('share')!.addEventListener('click', async () => {
+    const data = { title: document.title, text: document.querySelector('.answer p')!.textContent!, url: location.href };
+    try {
+      if (navigator.share) await navigator.share(data);
+      else { await navigator.clipboard.writeText(location.href); toast('Link copied'); }
+    } catch {}
+  });
+
+  // Another feeling
+  const ids = art.dataset.ids!.split(',').filter((x) => x !== id);
+  const another = document.getElementById('another') as HTMLAnchorElement;
+  another.href = `/e/${ids[Math.floor(Math.random() * ids.length)]}/`;
+
+  // Helpline for India, based on the device's time zone (nothing is sent anywhere)
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz === 'Asia/Kolkata' || tz === 'Asia/Calcutta') {
+      document.getElementById('help')!.innerHTML =
+        'In India, Tele-MANAS is free, 24/7 and in many languages: call <a href="tel:14416">14416</a> or <a href="tel:18008914416">1-800-891-4416</a>.';
+    }
+  } catch {}
+
+  // Breathing: 4s in, 6s out, six rounds
+  const box = document.getElementById('breathe')!;
+  const phase = document.getElementById('phase')!;
+  const btn = document.getElementById('breatheBtn')!;
+  let timers: number[] = [];
+  let running = false;
+  const stop = (msg = 'Breathe in for 4, out for 6. Six rounds.') => {
+    timers.forEach(clearTimeout); timers = []; running = false;
+    box.classList.remove('in', 'out'); phase.textContent = msg;
+    btn.lastChild!.textContent = 'Start';
+  };
+  btn.addEventListener('click', () => {
+    if (running) return stop();
+    running = true; btn.lastChild!.textContent = 'Stop';
+    const rm = reducedMotion();
+    for (let r = 0; r < 6; r++) {
+      const t0 = r * 10000;
+      timers.push(window.setTimeout(() => { box.classList.add('in'); box.classList.remove('out'); phase.textContent = rm ? `Breathe in… (${r + 1} of 6)` : 'Breathe in…'; }, t0));
+      timers.push(window.setTimeout(() => { box.classList.add('out'); box.classList.remove('in'); phase.textContent = 'And slowly out…'; }, t0 + 4000));
+    }
+    timers.push(window.setTimeout(() => stop('That was a minute. Notice how you feel now.'), 60000));
+  });
+</script>

@@ -1,0 +1,13 @@
+---
+import Base from '../layouts/Base.astro';
+import Sky from '../components/Sky.astro';
+---
+<Base title="Page not found" description="This page drifted off.">
+  <Sky theme={5} />
+  <div class="wrap narrow" style="padding:80px 22px 120px">
+    <span class="eyebrow t5" style="color:var(--t5-accent)">Lost in the mist</span>
+    <h1 class="entry-title" style="margin-top:16px">This page drifted off.</h1>
+    <p class="lede" style="margin-bottom:30px">It may have moved. Everything is still here.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn" href="/">All feelings</a><a class="btn quiet" href="/find/">Find a feeling</a></div>
+  </div>
+</Base>

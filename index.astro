@@ -1,0 +1,143 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import Sky from '../components/Sky.astro';
+import Card from '../components/Card.astro';
+import { THEMES, svg } from '../lib/themes';
+
+const all = (await getCollection('feelings')).sort((a, b) => a.data.order - b.data.order);
+const index = all.map((e) => ({
+  id: e.id, title: e.data.title, short: e.data.short, tags: e.data.tags.join(' '),
+  body: (e.body ?? '').trim(), theme: e.data.theme,
+}));
+---
+<Base title="Why Do I Feel This" description="Plain, gentle explanations for the everyday feelings that are hard to name." nav="home">
+  <Sky theme="home" />
+  <div class="wrap">
+    <div class="home">
+      <section class="home-side" aria-labelledby="hero">
+        <span class="eyebrow rise" style="--i:0">A small library of everyday feelings</span>
+        <h1 class="display rise" id="hero" style="--i:1">Oh, that’s why.</h1>
+        <p class="lede rise" style="--i:2">Plain, gentle explanations for the everyday feelings that are hard to name.</p>
+
+        <a class="finder-cta rise" style="--i:3" href="/find/">
+          <span class="orb"><Fragment set:html={svg('spark')} /></span>
+          <span><b>Can’t name it?</b><small>Find it in three taps</small></span>
+          <Fragment set:html={svg('arrow', 'ic go')} />
+        </a>
+
+        <div class="search rise" style="--i:4" role="search">
+          <Fragment set:html={svg('search')} />
+          <label class="sr" for="q">Search feelings</label>
+          <input id="q" type="search" placeholder="Try “jealous”, “meh” or “sunday”" autocomplete="off" enterkeyhint="search" />
+        </div>
+
+        <div class="chips rise" style="--i:5" role="group" aria-label="Browse by situation">
+          {THEMES.map((t, i) => (
+            <button type="button" class={`chip t${i}`} data-theme={i} aria-pressed="false">
+              <Fragment set:html={svg(t.icon)} />{t.name}
+            </button>
+          ))}
+          <button type="button" class="chip" id="savedChip" aria-pressed="false">
+            <Fragment set:html={svg('bookmark')} />Saved
+          </button>
+        </div>
+      </section>
+
+      <section aria-labelledby="listHead">
+        <div class="list-head rise" style="--i:3">
+          <h2 class="h-section" id="listHead">All feelings</h2>
+          <p class="count" id="count" aria-live="polite">{all.length} feelings</p>
+        </div>
+        <div class="cards" id="cards">
+          {all.map((e, i) => <Card id={e.id} title={e.data.title} short={e.data.short} theme={e.data.theme} i={i} />)}
+        </div>
+        <div class="empty" id="empty" hidden></div>
+      </section>
+    </div>
+  </div>
+  <script type="application/json" id="idx" set:html={JSON.stringify(index)} />
+</Base>
+
+<script>
+  import Fuse from 'fuse.js';
+  import { getSaved, softly } from '../lib/client';
+  import { THEMES } from '../lib/themes';
+
+  type Item = { id: string; title: string; short: string; tags: string; body: string; theme: number };
+  const data: Item[] = JSON.parse(document.getElementById('idx')!.textContent!);
+
+  // Old links like /#sunday-dread go to the new page.
+  const legacy = location.hash.slice(1);
+  if (legacy && data.some((d) => d.id === legacy)) location.replace(`/e/${legacy}/`);
+
+  const fuse = new Fuse(data, {
+    keys: [{ name: 'title', weight: 3 }, { name: 'tags', weight: 3 }, { name: 'short', weight: 2 }, { name: 'body', weight: 1 }],
+    threshold: 0.36, ignoreLocation: true, minMatchCharLength: 2,
+  });
+
+  const grid = document.getElementById('cards')!;
+  const cards = new Map([...grid.querySelectorAll<HTMLElement>('.card')].map((c) => [c.dataset.id!, c]));
+  const order = data.map((d) => d.id);
+  const input = document.getElementById('q') as HTMLInputElement;
+  const chips = [...document.querySelectorAll<HTMLButtonElement>('.chip[data-theme]')];
+  const savedChip = document.getElementById('savedChip') as HTMLButtonElement;
+  const count = document.getElementById('count')!;
+  const empty = document.getElementById('empty')!;
+  const head = document.getElementById('listHead')!;
+
+  let theme = -1;
+  let onlySaved = location.hash === '#saved';
+  let query = '';
+
+  function render() {
+    const saved = getSaved();
+    const ids = query.trim() ? fuse.search(query.trim()).map((r) => r.item.id) : order;
+    const visible = ids.filter((id) => {
+      const d = data.find((x) => x.id === id)!;
+      return (theme < 0 || d.theme === theme) && (!onlySaved || saved.includes(id));
+    });
+    cards.forEach((c, id) => {
+      c.hidden = !visible.includes(id);
+      c.classList.toggle('is-saved', saved.includes(id));
+    });
+    visible.forEach((id) => grid.appendChild(cards.get(id)!)); // results in best-match order
+
+    chips.forEach((c) => c.setAttribute('aria-pressed', String(+c.dataset.theme! === theme)));
+    savedChip.setAttribute('aria-pressed', String(onlySaved));
+    head.textContent = onlySaved ? 'Saved for later' : theme >= 0 ? THEMES[theme].name : query.trim() ? 'Closest matches' : 'All feelings';
+    count.textContent = `${visible.length} ${visible.length === 1 ? 'feeling' : 'feelings'}`;
+
+    empty.hidden = visible.length > 0;
+    if (!visible.length) {
+      empty.innerHTML = onlySaved && !query
+        ? 'Nothing saved yet. Open a feeling and tap <b>Save</b> to keep it here.'
+        : 'Nothing matches that yet. Try another word, or <a href="/find/">find it in three taps</a>.';
+    }
+  }
+
+  let t: number | undefined;
+  input.addEventListener('input', () => {
+    clearTimeout(t);
+    t = window.setTimeout(() => { query = input.value; softly(render); }, 120);
+  });
+  chips.forEach((c) => c.addEventListener('click', () => {
+    const i = +c.dataset.theme!;
+    theme = theme === i ? -1 : i;
+    softly(render);
+  }));
+  savedChip.addEventListener('click', () => {
+    onlySaved = !onlySaved;
+    history.replaceState(null, '', onlySaved ? '#saved' : location.pathname);
+    softly(render);
+  });
+  addEventListener('hashchange', () => {
+    onlySaved = location.hash === '#saved';
+    softly(render);
+    if (onlySaved) head.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.addEventListener('saved-change', render);
+  addEventListener('pageshow', render); // keep saved marks fresh after Back
+  render();
+  if (onlySaved) requestAnimationFrame(() => head.scrollIntoView({ block: 'start' }));
+</script>

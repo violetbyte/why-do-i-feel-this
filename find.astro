@@ -1,0 +1,128 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import Sky from '../components/Sky.astro';
+import { THEMES, WHEN, FEEL, ICONS, svg } from '../lib/themes';
+
+const all = (await getCollection('feelings')).sort((a, b) => a.data.order - b.data.order);
+const data = all.map((e) => ({ id: e.id, title: e.data.title, short: e.data.short, theme: e.data.theme, when: e.data.when, feel: e.data.feel }));
+const themes = THEMES.map((t) => ({ name: t.name, icon: ICONS[t.icon] }));
+// small glyphs for each answer
+const whenIcon: Record<string, string> = { people: 'dusk', quiet: 'overcast', comparing: 'drizzle', work: 'wind', endings: 'mist', nowhere: 'spark' };
+const feelIcon: Record<string, string> = { heavy: 'overcast', restless: 'wind', empty: 'mist', stung: 'drizzle', longing: 'dusk', tense: 'rainbow' };
+const tintFor = (icon: string) => { const i = THEMES.findIndex((t) => t.icon === icon); return i < 0 ? 3 : i; };
+const whenOpts = WHEN.map((w) => ({ ...w, svg: svg(whenIcon[w.id]), t: tintFor(whenIcon[w.id]) }));
+const feelOpts = FEEL.map((f) => ({ ...f, svg: svg(feelIcon[f.id]), t: tintFor(feelIcon[f.id]) }));
+---
+<Base title="Find a feeling" description="Can’t name what you feel? Answer two gentle questions and find the explanation that fits." og="find" nav="find">
+  <Sky theme={1} />
+  <div class="wrap narrow">
+    <div class="finder">
+      <div class="progress" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div id="stage"></div>
+      <noscript><p>This finder needs JavaScript. You can <a href="/">browse all feelings</a> instead.</p></noscript>
+    </div>
+  </div>
+  <script type="application/json" id="fdata" set:html={JSON.stringify({ data, themes, whenOpts, feelOpts, arrow: svg('arrow'), back: svg('back') })} />
+</Base>
+
+<script>
+  import { softly } from '../lib/client';
+
+  type Opt = { id: string; label: string; hint: string; svg: string; t: number };
+  type Entry = { id: string; title: string; short: string; theme: number; when: string[]; feel: string[] };
+  const F = JSON.parse(document.getElementById('fdata')!.textContent!) as {
+    data: Entry[]; themes: { name: string; icon: string }[]; whenOpts: Opt[]; feelOpts: Opt[]; arrow: string; back: string;
+  };
+  const stage = document.getElementById('stage')!;
+  const bars = [...document.querySelectorAll('.progress span')];
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  // State lives in the address (#when=…&feel=…) so Back works and results can be shared.
+  const read = () => {
+    const p = new URLSearchParams(location.hash.slice(1));
+    return { when: p.get('when'), feel: p.get('feel') };
+  };
+  const go = (when: string | null, feel: string | null) => {
+    const p = new URLSearchParams();
+    if (when) p.set('when', when);
+    if (feel) p.set('feel', feel);
+    location.hash = p.toString() || 'start';
+  };
+
+  const options = (list: Opt[], key: 'when' | 'feel') =>
+    `<div class="options">${list.map((o) => `
+      <button class="opt t${o.t}" type="button" data-${key}="${o.id}">
+        <span class="glyph">${o.svg}</span>
+        <span><b>${esc(o.label)}</b><small>${esc(o.hint)}</small></span>
+      </button>`).join('')}</div>`;
+
+  const card = (e: Entry) => {
+    const th = F.themes[e.theme];
+    return `<a class="card t${e.theme}" href="/e/${e.id}/" style="view-transition-name:t-${e.id}-c">
+      <span class="eyebrow"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${th.icon}</svg>${esc(th.name)}</span>
+      <h3 class="card-title" style="view-transition-name:t-${e.id}">${esc(e.title)}</h3>
+      <p class="card-short">${esc(e.short)}</p></a>`;
+  };
+
+  function score(e: Entry, when: string | null, feel: string | null) {
+    let s = 0;
+    if (when && when !== 'any' && e.when.includes(when)) s += e.when[0] === when ? 3 : 2;
+    if (feel && feel !== 'any' && e.feel.includes(feel)) s += e.feel[0] === feel ? 3 : 2;
+    return s;
+  }
+
+  function view() {
+    const { when, feel } = read();
+    const step = !when ? 0 : !feel ? 1 : 2;
+    bars.forEach((b, i) => b.classList.toggle('on', i <= step));
+
+    if (step === 0) {
+      stage.innerHTML = `<div class="step">
+        <h1 tabindex="-1">When does it show up?</h1>
+        <p class="sub">Pick the closest one. There are no wrong answers.</p>
+        ${options(F.whenOpts, 'when')}
+        <div class="step-foot"><a class="link-btn" href="/">Browse everything instead</a><button class="link-btn" data-when="any" type="button">I’m not sure</button></div>
+      </div>`;
+    } else if (step === 1) {
+      stage.innerHTML = `<div class="step">
+        <h1 tabindex="-1">What does it feel like?</h1>
+        <p class="sub">Go with your first instinct.</p>
+        ${options(F.feelOpts, 'feel')}
+        <div class="step-foot"><button class="link-btn" data-back type="button">Back</button><button class="link-btn" data-feel="any" type="button">I’m not sure</button></div>
+      </div>`;
+    } else {
+      const ranked = F.data
+        .map((e, i) => ({ e, s: score(e, when, feel), i }))
+        .filter((x) => x.s > 0)
+        .sort((a, b) => b.s - a.s || a.i - b.i);
+      const best = ranked.slice(0, 3).map((x) => x.e);
+      const also = ranked.slice(3, 7).map((x) => x.e);
+      const picks = best.length ? best : F.data.slice(0, 3);
+      stage.innerHTML = `<div class="step results">
+        <h1 tabindex="-1">${best.length === 1 ? 'This might be it.' : 'One of these might be it.'}</h1>
+        <p class="sub">Open the one that feels closest. If none fit, try different answers.</p>
+        <div class="cards best">${picks.map((e) => card(e)).join('')}</div>
+        ${also.length ? `<div class="also"><h2 class="eyebrow" style="margin-bottom:14px">Also worth a look</h2><div class="cards">${also.map((e) => card(e)).join('')}</div></div>` : ''}
+        <div class="step-foot"><button class="link-btn" data-back type="button">Change my answer</button><button class="btn" data-restart type="button">Start again</button></div>
+      </div>`;
+    }
+  }
+
+  stage.addEventListener('click', (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLElement>('button');
+    if (!b) return;
+    const { when } = read();
+    if (b.dataset.when) go(b.dataset.when, null);
+    else if (b.dataset.feel) go(when, b.dataset.feel);
+    else if ('back' in b.dataset) { const { feel } = read(); feel ? go(when, null) : go(null, null); }
+    else if ('restart' in b.dataset) go(null, null);
+  });
+
+  addEventListener('hashchange', () => {
+    softly(view);
+    window.scrollTo({ top: 0 });
+    requestAnimationFrame(() => stage.querySelector<HTMLElement>('h1')?.focus?.());
+  });
+  view();
+</script>

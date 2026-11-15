@@ -1,0 +1,57 @@
+---
+// Ambient "inner weather" behind the top of a page. Purely decorative.
+import { THEMES } from '../lib/themes';
+interface Props { theme?: number | 'home' }
+const { theme = 'home' } = Astro.props;
+const kind = theme === 'home' ? 'home' : THEMES[theme].icon;
+const cloud = 'M7 18a4 4 0 0 1-.5-8 5.5 5.5 0 0 1 10.6 1.2A3.5 3.5 0 0 1 17 18z';
+const drops = Array.from({ length: 14 }, (_, i) => ({ x: 150 + ((i * 53) % 240), d: (i * 0.53) % 3.6 }));
+---
+<div class:list={['sky', theme === 'home' ? 'home' : `t${theme}`]} aria-hidden="true">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  {theme === 'home' && <div class="blob b3"></div>}
+  {kind !== 'home' && (
+    <svg class="weather" viewBox="0 0 520 260" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6">
+      {kind === 'dusk' && (
+        <>
+          <g class="w-sun"><circle cx="260" cy="210" r="120" fill="currentColor" stroke="none" opacity=".08" /><circle cx="260" cy="210" r="72" fill="currentColor" stroke="none" opacity=".22" /></g>
+          <path d="M30 210h460M110 232h300M190 252h140" />
+        </>
+      )}
+      {kind === 'overcast' && (
+        <>
+          <g class="w-cloud"><path d={cloud} transform="translate(250 30) scale(9)" vector-effect="non-scaling-stroke" fill="currentColor" fill-opacity=".08" /></g>
+          <g class="w-cloud c2"><path d={cloud} transform="translate(80 90) scale(6)" vector-effect="non-scaling-stroke" fill="currentColor" fill-opacity=".06" /></g>
+          <g class="w-cloud c3"><path d={cloud} transform="translate(360 140) scale(4.5)" vector-effect="non-scaling-stroke" /></g>
+        </>
+      )}
+      {kind === 'drizzle' && (
+        <>
+          <g class="w-cloud"><path d={cloud} transform="translate(160 -20) scale(9)" vector-effect="non-scaling-stroke" fill="currentColor" fill-opacity=".08" /></g>
+          <g class="w-rain">{drops.map((p) => <line x1={p.x} y1="150" x2={p.x - 6} y2="168" style={`animation-delay:-${p.d}s`} />)}</g>
+        </>
+      )}
+      {kind === 'rainbow' && (
+        <g stroke-width="2.2">
+          <path class="w-arc" d="M70 250a190 190 0 0 1 380 0" />
+          <path class="w-arc" d="M110 250a150 150 0 0 1 300 0" style="animation-delay:-8s" opacity=".75" />
+          <path class="w-arc" d="M150 250a110 110 0 0 1 220 0" style="animation-delay:-16s" opacity=".5" />
+        </g>
+      )}
+      {kind === 'wind' && (
+        <g class="w-wind" stroke-width="2">
+          <path d="M20 80h300a40 40 0 1 0-40-40" />
+          <path d="M60 140h360a40 40 0 1 1-40 40" style="animation-delay:-3s" />
+          <path d="M0 200h240" style="animation-delay:-6s" />
+          <path d="M180 30h220" style="animation-delay:-4.5s" />
+        </g>
+      )}
+      {kind === 'mist' && (
+        <g class="w-mist" stroke-width="10" opacity=".55" style="filter:blur(3px)">
+          <path d="M60 60h300" /><path d="M140 110h340" /><path d="M20 160h280" /><path d="M180 210h260" />
+        </g>
+      )}
+    </svg>
+  )}
+</div>

@@ -1,0 +1,12 @@
+---
+import { THEMES, svg } from '../lib/themes';
+interface Props { id: string; title: string; short: string; theme: number; i?: number; reveal?: boolean }
+const { id, title, short, theme, i = 0, reveal = true } = Astro.props;
+const th = THEMES[theme];
+---
+<a class:list={['card', `t${theme}`, reveal && 'reveal']} href={`/e/${id}/`} data-id={id} data-theme={theme} style={`view-transition-name:c-${id}`}>
+  <span class="eyebrow"><Fragment set:html={svg(th.icon)} />{th.name}</span>
+  <h3 class="card-title" style={`view-transition-name:t-${id}`}>{title}</h3>
+  <p class="card-short">{short}</p>
+  <Fragment set:html={svg('bookmark', 'ic saved-mark')} />
+</a>
